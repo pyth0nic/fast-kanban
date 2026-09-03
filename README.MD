@@ -49,6 +49,18 @@ uvicorn app.main:app --reload
 
 The API is served at http://127.0.0.1:8000, with interactive docs at `/docs`.
 
+## Docker
+
+Build and run the containerized app (migrations run automatically on start):
+
+```bash
+docker build -t fast-kanban .
+docker run -p 8000:8000 -v fast-kanban-data:/data fast-kanban
+```
+
+The SQLite database is stored in the `/data` volume so it persists across container restarts.
+Override `DATABASE_URL` (and other settings from `.env.example`) with `-e` flags as needed.
+
 ## API
 
 | Method | Path                    | Description                              |
