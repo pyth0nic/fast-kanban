@@ -15,6 +15,8 @@ over a REST API, backed by SQLite. Tasks flow through the columns
   database calls that use them.
 - **Alembic** manages the SQLite schema as versioned migrations (`alembic/`), instead of
   relying on ad-hoc `create_all()` calls at runtime.
+- SQLite connections use **WAL (Write-Ahead Logging)** journal mode (`app/database.py`) for
+  better read/write concurrency than the default rollback journal.
 
 ## Project layout
 
