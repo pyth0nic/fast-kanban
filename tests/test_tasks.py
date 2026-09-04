@@ -1,5 +1,6 @@
 """Tests for the kanban task API."""
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -73,6 +74,68 @@ def test_update_task_partial_fields():
     body = response.json()
     assert body["title"] == "Old title"
     assert body["description"] == "New description"
+
+
+def test_task_metadata_filters_and_idempotency_work():
+    task_due = (datetime.now(timezone.utc) + timedelta(days=3)).replace(microsecond=0)
+    create = client.post(
+        "/tasks",
+        json={
+            "title": "Priority card",
+            "workspace_id": "workspace-a",
+            "assignee_id": "user-42",
+            "priority": "high",
+            "due_at": task_due.isoformat(),
+            "labels": ["ops", "urgent"],
+            "external_ref": "EXT-42",
+        },
+        headers={"Idempotency-Key": "alpha", "X-Workspace-Id": "workspace-a"},
+    )
+    assert create.status_code == 201
+    body = create.json()
+    assert body["priority"] == "high"
+    assert body["version"] == 1
+    assert body["workspace_id"] == "workspace-a"
+
+    filtered = client.get(
+        "/tasks",
+        params={"workspace_id": "workspace-a", "assignee_id": "user-42", "labels": ["ops"], "limit": 10},
+    )
+    assert filtered.status_code == 200
+    assert len(filtered.json()) == 1
+
+    etag = create.headers["ETag"]
+    stale = client.patch(
+        f"/tasks/{body['id']}",
+        json={"title": "Updated title"},
+        headers={"If-Match": 'W/"999"'},
+    )
+    assert stale.status_code == 412
+
+    updated = client.patch(
+        f"/tasks/{body['id']}",
+        json={"title": "Updated title"},
+        headers={"If-Match": etag, "Idempotency-Key": "beta", "X-Workspace-Id": "workspace-a"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["title"] == "Updated title"
+    assert updated.json()["version"] == 2
+
+    replay = client.patch(
+        f"/tasks/{body['id']}",
+        json={"title": "Updated title"},
+        headers={"If-Match": updated.headers["ETag"], "Idempotency-Key": "beta", "X-Workspace-Id": "workspace-a"},
+    )
+    assert replay.status_code == 200
+    assert replay.json()["version"] == 2
+
+    events = client.get(f"/tasks/{body['id']}/events")
+    assert events.status_code == 200
+    assert len(events.json()) >= 2
+
+    outbox = client.get("/tasks/outbox", params={"limit": 10})
+    assert outbox.status_code == 200
+    assert len(outbox.json()) >= 1
 
 
 def test_get_and_delete_missing_task_returns_404():

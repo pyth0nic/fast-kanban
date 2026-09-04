@@ -63,15 +63,26 @@ Override `DATABASE_URL` (and other settings from `.env.example`) with `-e` flags
 
 ## API
 
-| Method | Path                    | Description                              |
-|--------|-------------------------|-------------------------------------------|
-| POST   | `/tasks`                | Create a task                             |
-| GET    | `/tasks`                | List tasks (optional `status_filter`)     |
-| GET    | `/tasks/{id}`           | Get a task                                |
-| PATCH  | `/tasks/{id}`           | Update a task's title/description/status  |
-| POST   | `/tasks/{id}/progress`  | Advance a task to the next kanban column  |
-| DELETE | `/tasks/{id}`           | Delete a task                             |
-| GET    | `/health`               | Liveness probe                            |
+| Method | Path                    | Description                                                  |
+|--------|-------------------------|---------------------------------------------------------------|
+| POST   | `/tasks`                | Create a task                                                 |
+| GET    | `/tasks`                | List tasks with optional filters (`workspace_id`, `assignee_id`, `status_filter`, `labels`, `due_after`, `due_before`, `limit`, `offset`) |
+| GET    | `/tasks/{id}`           | Get a task                                                    |
+| PATCH  | `/tasks/{id}`           | Update a task's fields, guarded by `If-Match` / ETag          |
+| POST   | `/tasks/{id}/progress`  | Advance a task to the next kanban column                      |
+| GET    | `/tasks/{id}/events`    | Fetch the task's versioned lifecycle events                   |
+| GET    | `/tasks/outbox`         | Poll lifecycle events from the transactional outbox           |
+| DELETE | `/tasks/{id}`           | Delete a task                                                 |
+| GET    | `/health`               | Liveness probe                                                |
+
+The stable task payload includes `workspace_id`, `assignee_id`, `priority`, `due_at`, `labels`, `external_ref`, and a monotonically increasing `version`. Each response includes an `ETag` value (`W/"<version>"`) so stale writes can be rejected with `If-Match` headers. Requests that mutate state may include `Idempotency-Key` and `X-Workspace-Id` headers; identical payloads replay the previous response and conflicting redispatches return `409 Conflict`.
+
+## API contract and compatibility
+
+- The task schema is versioned in the API contract and should only be evolved with additive fields or backward-compatible defaults.
+- Existing clients may rely on the default values for newly introduced fields (`priority=medium`, `labels=[]`, `workspace_id=""`, `assignee_id=null`).
+- Breaking changes require a documented migration path and a new contract version, while the legacy route and payload remain available for the deprecation window.
+- Outbox payloads are intentionally transport-neutral: consumers may bridge them to Redis, Kafka, or an in-process queue without changing the stored event format.
 
 ## Migrations
 
