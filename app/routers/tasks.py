@@ -1,6 +1,7 @@
 """HTTP routes exposing the kanban task API."""
 import hashlib
 import json
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
@@ -13,6 +14,7 @@ from app.models import (
     TaskEvent,
     TaskIdempotencyRecord,
     TaskOutboxEventRead,
+    TaskPriority,
     TaskRead,
     TaskStatus,
     TaskUpdate,
@@ -125,8 +127,10 @@ def create_task(
 @router.get("", response_model=list[TaskRead])
 def list_tasks(
     status_filter: Optional[TaskStatus] = None,
+    status: Optional[TaskStatus] = None,
     workspace_id: Optional[str] = None,
     assignee_id: Optional[str] = None,
+    priority: Optional[str] = None,
     labels: Optional[list[str]] = Query(default=None),
     due_after: Optional[str] = None,
     due_before: Optional[str] = None,
@@ -135,14 +139,16 @@ def list_tasks(
     session: Session = Depends(get_session),
 ) -> list[TaskRead]:
     """List tasks, optionally filtered by metadata and date windows."""
-    due_after_dt = None if due_after is None else __import__("datetime").datetime.fromisoformat(due_after)
-    due_before_dt = None if due_before is None else __import__("datetime").datetime.fromisoformat(due_before)
+    resolved_status = status_filter if status is None else status
+    due_after_dt = None if due_after is None else datetime.fromisoformat(due_after)
+    due_before_dt = None if due_before is None else datetime.fromisoformat(due_before)
     return list(
         crud.list_tasks(
             session,
-            status=status_filter,
+            status=resolved_status,
             workspace_id=workspace_id,
             assignee_id=assignee_id,
+            priority=None if priority is None else TaskPriority(priority),
             labels=labels,
             due_after=due_after_dt,
             due_before=due_before_dt,

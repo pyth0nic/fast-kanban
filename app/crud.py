@@ -14,6 +14,7 @@ from app.models import (
     TaskCreate,
     TaskEvent,
     TaskOutboxStatus,
+    TaskPriority,
     TaskStatus,
     TaskUpdate,
     utcnow,
@@ -95,10 +96,10 @@ def create_task(session: Session, payload: TaskCreate) -> Task:
     task.created_at = utcnow()
     task.updated_at = task.created_at
     session.add(task)
-    session.commit()
-    session.refresh(task)
+    session.flush()
     _enqueue_outbox_event(session, task, "task.created")
     session.commit()
+    session.refresh(task)
     return task
 
 
@@ -107,6 +108,7 @@ def list_tasks(
     status: Optional[TaskStatus] = None,
     workspace_id: Optional[str] = None,
     assignee_id: Optional[str] = None,
+    priority: Optional[TaskPriority] = None,
     labels: Optional[list[str]] = None,
     due_after: Optional[datetime] = None,
     due_before: Optional[datetime] = None,
@@ -121,6 +123,8 @@ def list_tasks(
         statement = statement.where(Task.workspace_id == workspace_id)
     if assignee_id is not None:
         statement = statement.where(Task.assignee_id == assignee_id)
+    if priority is not None:
+        statement = statement.where(Task.priority == priority)
     if labels:
         for label in labels:
             statement = statement.where(Task.labels.cast(String).like(f'%"{label}"%'))
@@ -153,10 +157,10 @@ def update_task(session: Session, task: Task, changes: TaskUpdate) -> Task:
     task.version = (task.version or 0) + 1
     task.updated_at = utcnow()
     session.add(task)
-    session.commit()
-    session.refresh(task)
+    session.flush()
     _enqueue_outbox_event(session, task, "task.updated")
     session.commit()
+    session.refresh(task)
     return task
 
 
@@ -168,6 +172,7 @@ def progress_task(session: Session, task: Task) -> Task:
 def delete_task(session: Session, task: Task) -> None:
     """Remove a task from the database."""
     task.version = (task.version or 0) + 1
+    session.flush()
     _enqueue_outbox_event(session, task, "task.deleted")
     session.delete(task)
     session.commit()
